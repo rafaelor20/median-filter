@@ -20,3 +20,6 @@ clean:
 run: all
 	./$(NOME_PROJ) imagem_com_ruido.png output.png  
 
+# Benchmark using hyperfine
+bench: all
+	hyperfine --warmup 3 "./$(NOME_PROJ) imagem_com_ruido.png output.png" 
