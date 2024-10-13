@@ -1,18 +1,23 @@
-NOME_PROJ=median
-CC=g++
-FLAGS= -g -pg -lpng
+NOME_PROJ = median
+CC = gcc
+FLAGS = -g -pg
+LIBS = -lpng -lm -pthread
 
-SRC=$(wildcard *.cpp)   # Assuming your source files are .cpp
-OBJ=$(SRC:.cpp=.o)      # Generate object files for each .cpp
+SRC = $(wildcard *.c)   # Find all .c source files
+OBJ = $(SRC:.c=.o)      # Generate object files from each .c file
 
+# Default target
 all: $(NOME_PROJ)
 
+# Linking the object files to create the executable
 $(NOME_PROJ): $(OBJ)
-	$(CC) $(FLAGS) -o $(NOME_PROJ) $(OBJ)
+	$(CC) $(FLAGS) -o $(NOME_PROJ) $(OBJ) $(LIBS)
 
-%.o: %.cpp
+# Compiling each .c file into .o object files
+%.o: %.c
 	$(CC) $(FLAGS) -c $< -o $@
 
+# Clean up object files and the binary
 clean:
 	rm -f $(OBJ) $(NOME_PROJ)
 
@@ -20,6 +25,10 @@ clean:
 run: all
 	./$(NOME_PROJ) imagem_com_ruido.png output.png  
 
-# Benchmark using hyperfine
+# Benchmark the execution with hyperfine
 bench: all
-	hyperfine --warmup 3 "./$(NOME_PROJ) imagem_com_ruido.png output.png" 
+	hyperfine --warmup 3 "./$(NOME_PROJ) imagem_com_ruido.png output.png"
+
+gprof: all
+	./$(NOME_PROJ) imagem_com_ruido.png output.png
+	gprof $(NOME_PROJ) gmon.out > analysis.txt
