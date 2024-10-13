@@ -1,7 +1,7 @@
 NOME_PROJ = median
 CC = gcc
 FLAGS = -g -pg
-LIBS = -lpng
+LIBS = -lpng -lm -pthread
 
 SRC = $(wildcard *.c)   # Find all .c source files
 OBJ = $(SRC:.c=.o)      # Generate object files from each .c file
@@ -28,3 +28,7 @@ run: all
 # Benchmark the execution with hyperfine
 bench: all
 	hyperfine --warmup 3 "./$(NOME_PROJ) imagem_com_ruido.png output.png"
+
+gprof: all
+	./$(NOME_PROJ) imagem_com_ruido.png output.png
+	gprof $(NOME_PROJ) gmon.out > analysis.txt

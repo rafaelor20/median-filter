@@ -2,6 +2,17 @@
 #include <pngconf.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
+
+typedef struct {
+    png_bytep *row_pointers;
+    png_bytep *output_row_pointers;
+    int width;
+    int height;
+    int window_side;
+    int y; // Row index
+} ThreadData;
+
 
 void read_png_file(const char *filename, png_bytep **row_pointers, int *const width, int *const height, png_byte *color_type, png_byte *bit_depth) {
   FILE *fp = fopen(filename, "rb");
@@ -139,34 +150,56 @@ void apply_median_filter_row(png_bytep *row_pointers, png_bytep *output_row_poin
   }
 }
 
+void *apply_median_filter_row_thread(void *arg) {
+    ThreadData *data = (ThreadData *)arg;
+    apply_median_filter_row(data->row_pointers, data->output_row_pointers,
+                            data->width, data->height, data->y,
+                            data->window_side);
+    return NULL;
+}
+
 
 png_bytep *median_filter(png_bytep *row_pointers, const int width,
                          const int height, const int window_side) {
-  int number_of_channels = 3; // Assuming RGB
+    int number_of_channels = 3; // Assuming RGB
 
-  // Allocate memory for the output rows
-  png_bytep *output_row_pointers =
-      (png_bytep *)malloc(sizeof(png_bytep) * height);
-  for (int y = 0; y < height; y++) {
-    output_row_pointers[y] = (png_bytep)malloc(width * number_of_channels);
-  }
+    // Allocate memory for the output rows
+    png_bytep *output_row_pointers =
+        (png_bytep *)malloc(sizeof(png_bytep) * height);
+    for (int y = 0; y < height; y++) {
+        output_row_pointers[y] = (png_bytep)malloc(width * number_of_channels);
+    }
 
-  int edgey = window_side / 2;
+    int edgey = window_side / 2;
+    int num_threads = height - 2 * edgey; // Adjust for edge handling
+    pthread_t threads[num_threads];
+    ThreadData thread_data[num_threads];
 
-  // Apply the median filter for each row, avoiding the edges
-  for (int y = edgey; y < height - edgey; y++) {
-    apply_median_filter_row(row_pointers, output_row_pointers, width, height, y, window_side);
-  }
+    // Create threads to apply the median filter for each row
+    for (int y = edgey; y < height - edgey; y++) {
+        thread_data[y - edgey].row_pointers = row_pointers;
+        thread_data[y - edgey].output_row_pointers = output_row_pointers;
+        thread_data[y - edgey].width = width;
+        thread_data[y - edgey].height = height;
+        thread_data[y - edgey].window_side = window_side;
+        thread_data[y - edgey].y = y;
 
-  // Free the original row pointers
-  for (int y = 0; y < height; y++) {
-    free(row_pointers[y]);
-  }
-  free(row_pointers);
+        pthread_create(&threads[y - edgey], NULL, apply_median_filter_row_thread, &thread_data[y - edgey]);
+    }
 
-  return output_row_pointers;
+    // Join threads to ensure all threads complete
+    for (int y = edgey; y < height - edgey; y++) {
+        pthread_join(threads[y - edgey], NULL);
+    }
+
+    // Free the original row pointers
+    for (int y = 0; y < height; y++) {
+        free(row_pointers[y]);
+    }
+    free(row_pointers);
+
+    return output_row_pointers;
 }
-
 
 int main(int argc, char **argv) {
   if (argc != 3) {
