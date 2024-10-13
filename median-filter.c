@@ -111,14 +111,9 @@ int comp(const void *a, const void *b) {
     return 1;
 }
 
-png_bytep *median_filter(png_bytep *row_pointers, const int width,
-                         const int height, const int window_side) {
-  png_bytep *output_row_pointers =
-      (png_bytep *)malloc(sizeof(png_bytep) * width);
-  for (int x = 0; x < width; x++) {
-    output_row_pointers[x] = (png_byte *)malloc(height * 3);
-  }
-
+void apply_median_filter_row(png_bytep *row_pointers, png_bytep *output_row_pointers,
+                             const int width, const int height, const int y,
+                             const int window_side) {
   png_byte windowR[window_side * window_side];
   png_byte windowG[window_side * window_side];
   png_byte windowB[window_side * window_side];
@@ -130,31 +125,50 @@ png_bytep *median_filter(png_bytep *row_pointers, const int width,
   int median = num_elem_window / 2;
 
   for (int x = edgex; x < width - edgex; x++) {
+    int i = 0;
 
-    for (int y = edgey; y < height - edgey; y++) {
-
-      int i = 0;
-
-      for (int fx = 0; fx < window_side; fx++) {
-
-        for (int fy = 0; fy < window_side; fy++) {
-          windowR[i] = row_pointers[x + fx - edgex][3 * (y + fy - edgey)];
-          windowG[i] = row_pointers[x + fx - edgex][3 * (y + fy - edgey) + 1];
-          windowB[i] = row_pointers[x + fx - edgex][3 * (y + fy - edgey) + 2];
-          i++;
-        }
-
-        qsort(windowR, num_elem_window, sizeof(png_byte), comp);
-        qsort(windowG, num_elem_window, sizeof(png_byte), comp);
-        qsort(windowB, num_elem_window, sizeof(png_byte), comp);
-
-        output_row_pointers[x][3 * y] = windowR[median];
-        output_row_pointers[x][3 * y + 1] = windowG[median];
-        output_row_pointers[x][3 * y + 2] = windowB[median];
+    // Fill the window with the pixel values in the neighborhood
+    for (int fx = 0; fx < window_side; fx++) {
+      for (int fy = 0; fy < window_side; fy++) {
+        windowR[i] = row_pointers[y + fy - edgey][3 * (x + fx - edgex)];
+        windowG[i] = row_pointers[y + fy - edgey][3 * (x + fx - edgex) + 1];
+        windowB[i] = row_pointers[y + fy - edgey][3 * (x + fx - edgex) + 2];
+        i++;
       }
     }
+
+    // Sort the window arrays
+    qsort(windowR, num_elem_window, sizeof(png_byte), comp);
+    qsort(windowG, num_elem_window, sizeof(png_byte), comp);
+    qsort(windowB, num_elem_window, sizeof(png_byte), comp);
+
+    // Set the median value to the output
+    output_row_pointers[y][3 * x] = windowR[median];
+    output_row_pointers[y][3 * x + 1] = windowG[median];
+    output_row_pointers[y][3 * x + 2] = windowB[median];
+  }
+}
+
+
+png_bytep *median_filter(png_bytep *row_pointers, const int width,
+                         const int height, const int window_side) {
+  int number_of_channels = 3; // Assuming RGB
+
+  // Allocate memory for the output rows
+  png_bytep *output_row_pointers =
+      (png_bytep *)malloc(sizeof(png_bytep) * height);
+  for (int y = 0; y < height; y++) {
+    output_row_pointers[y] = (png_bytep)malloc(width * number_of_channels);
   }
 
+  int edgey = window_side / 2;
+
+  // Apply the median filter for each row, avoiding the edges
+  for (int y = edgey; y < height - edgey; y++) {
+    apply_median_filter_row(row_pointers, output_row_pointers, width, height, y, window_side);
+  }
+
+  // Free the original row pointers
   for (int y = 0; y < height; y++) {
     free(row_pointers[y]);
   }

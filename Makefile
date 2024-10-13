@@ -1,7 +1,7 @@
 NOME_PROJ = median
 CC = gcc
 FLAGS = -g -pg
-LIBS = -lpng -lm -pthread
+LIBS = -lpng -lm
 
 SRC = $(wildcard *.c)   # Find all .c source files
 OBJ = $(SRC:.c=.o)      # Generate object files from each .c file
