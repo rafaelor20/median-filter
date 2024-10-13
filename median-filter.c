@@ -3,17 +3,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void read_png_file(const char *filename, png_bytep **row_pointers,
-                   int *const width, int *const height, png_byte *color_type,
-                   png_byte *bit_depth) {
+void read_png_file(const char *filename, png_bytep **row_pointers, int *const width, int *const height, png_byte *color_type, png_byte *bit_depth) {
   FILE *fp = fopen(filename, "rb");
   if (!fp) {
     perror("File could not be opened");
     return;
   }
 
-  png_structp png =
-      png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   if (!png) {
     fclose(fp);
     fprintf(stderr, "png_create_read_struct failed\n");
@@ -55,16 +52,14 @@ void read_png_file(const char *filename, png_bytep **row_pointers,
   fclose(fp);
 }
 
-void write_png_file(const char *filename, png_bytep *row_pointers, int width,
-                    int height, png_byte color_type, png_byte bit_depth) {
+void write_png_file(const char *filename, png_bytep *row_pointers, int width, int height, png_byte color_type, png_byte bit_depth) {
   FILE *fp = fopen(filename, "wb");
   if (!fp) {
     perror("File could not be opened for writing");
     return;
   }
 
-  png_structp png =
-      png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   if (!png) {
     fclose(fp);
     fprintf(stderr, "png_create_write_struct failed\n");
@@ -103,20 +98,19 @@ int comp(const void *a, const void *b) {
   png_byte a_temp = *(png_byte *)a;
   png_byte b_temp = *(png_byte *)b;
 
-  if (a_temp < b_temp)
-    return -1;
-  else if (a_temp == b_temp)
-    return 0;
-  else
-    return 1;
+  return (a_temp > b_temp) - (a_temp < b_temp);
 }
 
 png_bytep *median_filter(png_bytep *row_pointers, const int width,
                          const int height, const int window_side) {
+  // Number of channels, assuming RGB (3 channels)
+  int number_of_channels = 3; // Adjust based on actual color type if needed
+
+  // Allocate memory for the output rows
   png_bytep *output_row_pointers =
-      (png_bytep *)malloc(sizeof(png_bytep) * width);
-  for (int x = 0; x < width; x++) {
-    output_row_pointers[x] = (png_byte *)malloc(height * 3);
+      (png_bytep *)malloc(sizeof(png_bytep) * height);
+  for (int y = 0; y < height; y++) {
+    output_row_pointers[y] = (png_bytep)malloc(width * number_of_channels);
   }
 
   png_byte windowR[window_side * window_side];
@@ -136,22 +130,22 @@ png_bytep *median_filter(png_bytep *row_pointers, const int width,
       int i = 0;
 
       for (int fx = 0; fx < window_side; fx++) {
-
+        
         for (int fy = 0; fy < window_side; fy++) {
-          windowR[i] = row_pointers[x + fx - edgex][3 * (y + fy - edgey)];
-          windowG[i] = row_pointers[x + fx - edgex][3 * (y + fy - edgey) + 1];
-          windowB[i] = row_pointers[x + fx - edgex][3 * (y + fy - edgey) + 2];
+          windowR[i] = row_pointers[y + fy - edgey][3 * (x + fx - edgex)];
+          windowG[i] = row_pointers[y + fy - edgey][3 * (x + fx - edgex) + 1];
+          windowB[i] = row_pointers[y + fy - edgey][3 * (x + fx - edgex) + 2];
           i++;
         }
-
-        qsort(windowR, num_elem_window, sizeof(png_byte), comp);
-        qsort(windowG, num_elem_window, sizeof(png_byte), comp);
-        qsort(windowB, num_elem_window, sizeof(png_byte), comp);
-
-        output_row_pointers[x][3 * y] = windowR[median];
-        output_row_pointers[x][3 * y + 1] = windowG[median];
-        output_row_pointers[x][3 * y + 2] = windowB[median];
       }
+
+      qsort(windowR, num_elem_window, sizeof(png_byte), comp);
+      qsort(windowG, num_elem_window, sizeof(png_byte), comp);
+      qsort(windowB, num_elem_window, sizeof(png_byte), comp);
+
+      output_row_pointers[y][3 * x] = windowR[median];
+      output_row_pointers[y][3 * x + 1] = windowG[median];
+      output_row_pointers[y][3 * x + 2] = windowB[median];
     }
   }
 
@@ -173,18 +167,15 @@ int main(int argc, char **argv) {
   int width, height;
   png_byte color_type, bit_depth;
 
-  read_png_file(argv[1], &row_pointers, &width, &height, &color_type,
-                &bit_depth);
+  read_png_file(argv[1], &row_pointers, &width, &height, &color_type, &bit_depth);
 
-  png_bytep *output_row_pointers =
-      median_filter(row_pointers, width, height, 5);
+  png_bytep *output_row_pointers = median_filter(row_pointers, width, height, 5);
 
-  write_png_file(argv[2], output_row_pointers, height, width, color_type,
-                 bit_depth);
+  write_png_file(argv[2], output_row_pointers, width, height, color_type, bit_depth);
 
   // Free the output row pointers
-  for (int x = 0; x < width; x++) {
-    free(output_row_pointers[x]);
+  for (int y = 0; y < height; y++) {
+    free(output_row_pointers[y]);
   }
   free(output_row_pointers);
 
