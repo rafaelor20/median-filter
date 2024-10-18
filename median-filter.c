@@ -2,17 +2,6 @@
 #include <pngconf.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
-
-typedef struct {
-    png_bytep *row_pointers;
-    png_bytep *output_row_pointers;
-    int width;
-    int height;
-    int window_side;
-    int y; // Row index
-} ThreadData;
-
 
 void read_png_file(const char *filename, png_bytep **row_pointers, int *const width, int *const height, png_byte *color_type, png_byte *bit_depth) {
   FILE *fp = fopen(filename, "rb");
@@ -21,7 +10,8 @@ void read_png_file(const char *filename, png_bytep **row_pointers, int *const wi
     return;
   }
 
-  png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  png_structp png =
+      png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   if (!png) {
     fclose(fp);
     fprintf(stderr, "png_create_read_struct failed\n");
@@ -70,7 +60,8 @@ void write_png_file(const char *filename, png_bytep *row_pointers, int width, in
     return;
   }
 
-  png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  png_structp png =
+      png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   if (!png) {
     fclose(fp);
     fprintf(stderr, "png_create_write_struct failed\n");
@@ -109,12 +100,22 @@ int comp(const void *a, const void *b) {
   png_byte a_temp = *(png_byte *)a;
   png_byte b_temp = *(png_byte *)b;
 
-  return (a_temp > b_temp) - (a_temp < b_temp);
+  if (a_temp < b_temp)
+    return -1;
+  else if (a_temp == b_temp)
+    return 0;
+  else
+    return 1;
 }
 
-void apply_median_filter_row(png_bytep *row_pointers, png_bytep *output_row_pointers,
-                             const int width, const int height, const int y,
-                             const int window_side) {
+png_bytep *median_filter(png_bytep *row_pointers, const int width,
+                         const int height, const int window_side) {
+  png_bytep *output_row_pointers =
+      (png_bytep *)malloc(sizeof(png_bytep) * width);
+  for (int x = 0; x < width; x++) {
+    output_row_pointers[x] = (png_byte *)malloc(height * 3);
+  }
+
   png_byte windowR[window_side * window_side];
   png_byte windowG[window_side * window_side];
   png_byte windowB[window_side * window_side];
@@ -126,79 +127,37 @@ void apply_median_filter_row(png_bytep *row_pointers, png_bytep *output_row_poin
   int median = num_elem_window / 2;
 
   for (int x = edgex; x < width - edgex; x++) {
-    int i = 0;
 
-    // Fill the window with the pixel values in the neighborhood
-    for (int fx = 0; fx < window_side; fx++) {
-      for (int fy = 0; fy < window_side; fy++) {
-        windowR[i] = row_pointers[y + fy - edgey][3 * (x + fx - edgex)];
-        windowG[i] = row_pointers[y + fy - edgey][3 * (x + fx - edgex) + 1];
-        windowB[i] = row_pointers[y + fy - edgey][3 * (x + fx - edgex) + 2];
-        i++;
+    for (int y = edgey; y < height - edgey; y++) {
+
+      int i = 0;
+
+      for (int fx = 0; fx < window_side; fx++) {
+
+        for (int fy = 0; fy < window_side; fy++) {
+          windowR[i] = row_pointers[x + fx - edgex][3 * (y + fy - edgey)];
+          windowG[i] = row_pointers[x + fx - edgex][3 * (y + fy - edgey) + 1];
+          windowB[i] = row_pointers[x + fx - edgex][3 * (y + fy - edgey) + 2];
+          i++;
+        }
+
+        qsort(windowR, num_elem_window, sizeof(png_byte), comp);
+        qsort(windowG, num_elem_window, sizeof(png_byte), comp);
+        qsort(windowB, num_elem_window, sizeof(png_byte), comp);
+
+        output_row_pointers[x][3 * y] = windowR[median];
+        output_row_pointers[x][3 * y + 1] = windowG[median];
+        output_row_pointers[x][3 * y + 2] = windowB[median];
       }
     }
-
-    // Sort the window arrays
-    qsort(windowR, num_elem_window, sizeof(png_byte), comp);
-    qsort(windowG, num_elem_window, sizeof(png_byte), comp);
-    qsort(windowB, num_elem_window, sizeof(png_byte), comp);
-
-    // Set the median value to the output
-    output_row_pointers[y][3 * x] = windowR[median];
-    output_row_pointers[y][3 * x + 1] = windowG[median];
-    output_row_pointers[y][3 * x + 2] = windowB[median];
   }
-}
 
-void *apply_median_filter_row_thread(void *arg) {
-    ThreadData *data = (ThreadData *)arg;
-    apply_median_filter_row(data->row_pointers, data->output_row_pointers,
-                            data->width, data->height, data->y,
-                            data->window_side);
-    return NULL;
-}
+  for (int y = 0; y < height; y++) {
+    free(row_pointers[y]);
+  }
+  free(row_pointers);
 
-
-png_bytep *median_filter(png_bytep *row_pointers, const int width,
-                         const int height, const int window_side) {
-    int number_of_channels = 3; // Assuming RGB
-
-    // Allocate memory for the output rows
-    png_bytep *output_row_pointers =
-        (png_bytep *)malloc(sizeof(png_bytep) * height);
-    for (int y = 0; y < height; y++) {
-        output_row_pointers[y] = (png_bytep)malloc(width * number_of_channels);
-    }
-
-    int edgey = window_side / 2;
-    int num_threads = height - 2 * edgey; // Adjust for edge handling
-    pthread_t threads[num_threads];
-    ThreadData thread_data[num_threads];
-
-    // Create threads to apply the median filter for each row
-    for (int y = edgey; y < height - edgey; y++) {
-        thread_data[y - edgey].row_pointers = row_pointers;
-        thread_data[y - edgey].output_row_pointers = output_row_pointers;
-        thread_data[y - edgey].width = width;
-        thread_data[y - edgey].height = height;
-        thread_data[y - edgey].window_side = window_side;
-        thread_data[y - edgey].y = y;
-
-        pthread_create(&threads[y - edgey], NULL, apply_median_filter_row_thread, &thread_data[y - edgey]);
-    }
-
-    // Join threads to ensure all threads complete
-    for (int y = edgey; y < height - edgey; y++) {
-        pthread_join(threads[y - edgey], NULL);
-    }
-
-    // Free the original row pointers
-    for (int y = 0; y < height; y++) {
-        free(row_pointers[y]);
-    }
-    free(row_pointers);
-
-    return output_row_pointers;
+  return output_row_pointers;
 }
 
 int main(int argc, char **argv) {
@@ -211,15 +170,18 @@ int main(int argc, char **argv) {
   int width, height;
   png_byte color_type, bit_depth;
 
-  read_png_file(argv[1], &row_pointers, &width, &height, &color_type, &bit_depth);
+  read_png_file(argv[1], &row_pointers, &width, &height, &color_type,
+                &bit_depth);
 
-  png_bytep *output_row_pointers = median_filter(row_pointers, width, height, 5);
+  png_bytep *output_row_pointers =
+      median_filter(row_pointers, width, height, 5);
 
-  write_png_file(argv[2], output_row_pointers, width, height, color_type, bit_depth);
+  write_png_file(argv[2], output_row_pointers, height, width, color_type,
+                 bit_depth);
 
   // Free the output row pointers
-  for (int y = 0; y < height; y++) {
-    free(output_row_pointers[y]);
+  for (int x = 0; x < width; x++) {
+    free(output_row_pointers[x]);
   }
   free(output_row_pointers);
 
